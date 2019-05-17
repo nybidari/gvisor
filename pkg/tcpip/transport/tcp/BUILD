@@ -23,6 +23,7 @@ go_library(
         "connect.go",
         "cubic.go",
         "cubic_state.go",
+        "dispatcher.go",
         "endpoint.go",
         "endpoint_state.go",
         "forwarder.go",
@@ -45,7 +46,6 @@ go_library(
     imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/log",
         "//pkg/rand",
         "//pkg/sleep",
         "//pkg/tcpip",
