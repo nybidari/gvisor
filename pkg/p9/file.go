@@ -89,6 +89,20 @@ type File interface {
 	// On the server, SetAttr has a write concurrency guarantee.
 	SetAttr(valid SetAttrMask, attr SetAttr) error
 
+	// GetXattr returns extended attributes of this node.
+	///
+	// Note that size is a hint that implementations are free to ignore, so the
+	// value returned may be larger or smaller than size. Size handling is done
+	// at the syscall layer.
+	//
+	// TODO(b/127675828): Determine concurrency guarantees once implemented.
+	GetXattr(name string, size uint64) (string, error)
+
+	// SetXattr sets extended attributes on this node.
+	//
+	// TODO(b/127675828): Determine concurrency guarantees once implemented.
+	SetXattr(name, value string, size uint64, flags uint32) error
+
 	// Allocate allows the caller to directly manipulate the allocated disk space
 	// for the file. See fallocate(2) for more details.
 	Allocate(mode AllocateMode, offset, length uint64) error
