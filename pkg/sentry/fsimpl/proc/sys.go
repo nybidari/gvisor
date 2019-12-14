@@ -39,13 +39,15 @@ func (d *mmapMinAddrData) Generate(ctx context.Context, buf *bytes.Buffer) error
 	return nil
 }
 
+// hostnameData implements vfs.DynamicBytesSource for /proc/sys/kernel/hostname.
+//
 // +stateify savable
-type overcommitMemory struct{}
-
-var _ vfs.DynamicBytesSource = (*overcommitMemory)(nil)
+type hostnameData struct{}
 
 // Generate implements vfs.DynamicBytesSource.Generate.
-func (d *overcommitMemory) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	fmt.Fprintf(buf, "0\n")
+func (*hostnameData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	utsns := kernel.UTSNamespaceFromContext(ctx)
+	buf.WriteString(utsns.HostName())
+	buf.WriteString("\n")
 	return nil
 }

@@ -76,7 +76,7 @@ afterSymlink:
 	next := nextVFSD.Impl().(*Dentry)
 
 	// Resolve any symlink at current path component.
-	if rp.ShouldFollowSymlink() && d.isSymlink() {
+	if rp.ShouldFollowSymlink() && next.isSymlink() {
 		// TODO: VFS2 needs something extra for /proc/[pid]/fd/ "magic symlinks".
 		target, err := next.inode.Readlink(ctx)
 		if err != nil {

@@ -28,16 +28,14 @@ import (
 // meminfoData implements vfs.DynamicBytesSource for /proc/meminfo.
 //
 // +stateify savable
-type meminfoData struct {
-	// k is the owning Kernel.
-	k *kernel.Kernel
-}
+type meminfoData struct{}
 
 var _ vfs.DynamicBytesSource = (*meminfoData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
-func (d *meminfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	mf := d.k.MemoryFile()
+func (*meminfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	k := kernel.KernelFromContext(ctx)
+	mf := k.MemoryFile()
 	mf.UpdateUsage()
 	snapshot, totalUsage := usage.MemoryAccounting.Copy()
 	totalSize := usage.TotalMemory(mf.TotalSize(), totalUsage)

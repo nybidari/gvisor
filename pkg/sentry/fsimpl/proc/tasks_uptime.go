@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,22 +16,24 @@ package proc
 
 import (
 	"bytes"
+	"fmt"
 
 	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 )
 
-func newCPUInfo(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
+// uptimeData implements vfs.DynamicBytesSource for /proc/uptime.
+//
+// +stateify savable
+type uptimeData struct{}
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (*uptimeData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	k := kernel.KernelFromContext(ctx)
-	features := k.FeatureSet()
-	if features == nil {
-		// Kernel is always initialized with a FeatureSet.
-		panic("cpuinfo read with nil FeatureSet")
-	}
-	var buf bytes.Buffer
-	for i, max := uint(0), k.ApplicationCores(); i < max; i++ {
-		features.CPUInfo(i, &buf)
-	}
-	return newStaticProcInode(ctx, msrc, buf.Bytes())
+	now := time.NowFromContext(ctx)
+
+	// Pretend that we've spent zero time sleeping (second number).
+	fmt.Fprintf(buf, "%.2f 0.00\n", now.Sub(k.Timekeeper().BootTime()).Seconds())
+	return nil
 }

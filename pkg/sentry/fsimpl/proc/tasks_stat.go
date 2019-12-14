@@ -65,21 +65,19 @@ func (c cpuStats) String() string {
 // statData implements vfs.DynamicBytesSource for /proc/stat.
 //
 // +stateify savable
-type statData struct {
-	// k is the owning Kernel.
-	k *kernel.Kernel
-}
+type statData struct{}
 
 var _ vfs.DynamicBytesSource = (*statData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
-func (s *statData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+func (*statData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// TODO(b/37226836): We currently export only zero CPU stats. We could
 	// at least provide some aggregate stats.
 	var cpu cpuStats
 	fmt.Fprintf(buf, "cpu  %s\n", cpu)
 
-	for c, max := uint(0), s.k.ApplicationCores(); c < max; c++ {
+	k := kernel.KernelFromContext(ctx)
+	for c, max := uint(0), k.ApplicationCores(); c < max; c++ {
 		fmt.Fprintf(buf, "cpu%d %s\n", c, cpu)
 	}
 
@@ -103,7 +101,7 @@ func (s *statData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "ctxt 0\n")
 
 	// CLOCK_REALTIME timestamp from boot, in seconds.
-	fmt.Fprintf(buf, "btime %d\n", s.k.Timekeeper().BootTime().Seconds())
+	fmt.Fprintf(buf, "btime %d\n", k.Timekeeper().BootTime().Seconds())
 
 	// Total number of clones.
 	// TODO(b/37226836): Count this.

@@ -30,7 +30,7 @@ type loadavgData struct{}
 var _ vfs.DynamicBytesSource = (*loadavgData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
-func (d *loadavgData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+func (*loadavgData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// TODO(b/62345059): Include real data in fields.
 	// Column 1-3: CPU and IO utilization of the last 1, 5, and 10 minute periods.
 	// Column 4-5: currently running processes and the total number of processes.

@@ -26,16 +26,14 @@ import (
 // versionData implements vfs.DynamicBytesSource for /proc/version.
 //
 // +stateify savable
-type versionData struct {
-	// k is the owning Kernel.
-	k *kernel.Kernel
-}
+type versionData struct{}
 
 var _ vfs.DynamicBytesSource = (*versionData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
-func (v *versionData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	init := v.k.GlobalInit()
+func (*versionData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	k := kernel.KernelFromContext(ctx)
+	init := k.GlobalInit()
 	if init == nil {
 		// Attempted to read before the init Task is created. This can
 		// only occur during startup, which should never need to read
