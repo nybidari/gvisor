@@ -13,6 +13,7 @@
 # limitations under the License.
 """Abstract types."""
 
+import threading
 from typing import List
 
 from benchmarks.harness import machine
@@ -28,3 +29,31 @@ class MachineProducer:
   def release_machines(self, machine_list: List[machine.Machine]):
     """Releases the given set of machines."""
     raise NotImplementedError
+
+
+class LocalMachineProducer(MachineProducer):
+  """Produces Local Machines."""
+
+  def __init__(self, max_machines: int):
+    self.max_machines = max_machines
+    self.in_use_machines = 0
+    self.condition = threading.Condition()
+
+  def get_machines(self, num_machines: int) -> List[machine.MockMachine]:
+    """Returns the request number of MockMachines."""
+    if num_machines > self.max_machines:
+      raise ValueError(
+          "Insufficient Ammount of Machines. {ask} asked for and have {max_num} max."
+          .format(ask=num_machines, max_num=self.max_machines))
+
+    with self.condition:
+      while (self.max_machines - self.in_use_machines) < num_machines:
+        self.machine_condition.wait(timeout=1)
+      self.in_use_machines += num_machines
+      return [machine.LocalMachine("local") for _ in range(num_machines)]
+
+  def release_machines(self, machine_list: List[machine.MockMachine]):
+    """No-op."""
+    with self.condition:
+      self.in_use_machines -= len(machine_list)
+      machine_list.clear()

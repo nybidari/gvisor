@@ -1,4 +1,5 @@
 load("//benchmarks:defs.bzl", "py_library", "py_test", "requirement")
+load("//javascript/tools/tarball:builddefs.bzl", "Tarball", "TarballEntry")
 
 package(
     default_visibility = ["//benchmarks:__subpackages__"],
@@ -27,9 +28,14 @@ py_test(
     ],
 )
 
-filegroup(
-    name = "files",
-    srcs = [
-        "Dockerfile",
+Tarball(
+    name = "tar",
+    entries = [
+        TarballEntry(
+            srcs = [
+                "Dockerfile",
+            ],
+            strip_prefix = "third_party/gvisor/benchmarks/workloads/ab",
+        ),
     ],
 )

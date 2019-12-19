@@ -1,11 +1,18 @@
+load("//javascript/tools/tarball:builddefs.bzl", "Tarball", "TarballEntry")
+
 package(
     default_visibility = ["//benchmarks:__subpackages__"],
     licenses = ["notice"],
 )
 
-filegroup(
-    name = "files",
-    srcs = [
-        "Dockerfile",
+Tarball(
+    name = "tar",
+    entries = [
+        TarballEntry(
+            srcs = [
+                "Dockerfile",
+            ],
+            strip_prefix = "third_party/gvisor/benchmarks/workloads/redis",
+        ),
     ],
 )
