@@ -32,6 +32,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
@@ -101,6 +102,161 @@ TEST(BadSocketPairArgs, ValidateErrForBadCallsToSocketPair) {
   ASSERT_THAT(socketpair(8675309, 0, 0, fd),
               SyscallFailsWithErrno(EAFNOSUPPORT));
 }
+
+enum Operation {
+  Bind,
+  Connect,
+  SendTo,
+};
+
+using OperationSequence = std::vector<Operation>;
+
+using DualStackSocketTest =
+    ::testing::TestWithParam<std::tuple<TestAddress, OperationSequence>>;
+
+TEST_P(DualStackSocketTest, AddressOperations) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, 0));
+
+  auto const& param = GetParam();
+  auto const& addr = std::get<0>(param);
+  auto const& operations = std::get<1>(param);
+
+  auto addr_in = reinterpret_cast<const sockaddr*>(&addr.addr);
+
+  // sockets may only be bound once. Both `connect` and `sendto` cause a socket
+  // to be bound.
+  bool bound = false;
+  for (auto const& operation : operations) {
+    switch (operation) {
+      case Bind: {
+        ASSERT_NO_ERRNO(SetAddrPort(
+            addr.family(), const_cast<sockaddr_storage*>(&addr.addr), 0));
+
+        int bind_ret = bind(fd.get(), addr_in, addr.addr_len);
+
+        // Dual stack sockets may only be bound to AF_INET6.
+        if (!bound && addr.family() == AF_INET6) {
+          EXPECT_THAT(bind_ret, SyscallSucceeds());
+          bound = true;
+
+          sockaddr_storage bound_addr;
+          socklen_t addrlen = sizeof(bound_addr);
+          ASSERT_THAT(
+              getsockname(fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                          &addrlen),
+              SyscallSucceeds());
+          ASSERT_EQ(addrlen, sizeof(struct sockaddr_in6));
+
+          if (IN6_IS_ADDR_V4MAPPED(
+                  reinterpret_cast<const sockaddr_in6*>(addr_in)
+                      ->sin6_addr.s6_addr32)) {
+            ASSERT_TRUE(IN6_IS_ADDR_V4MAPPED(
+                reinterpret_cast<const sockaddr_in6*>(&bound_addr)
+                    ->sin6_addr.s6_addr32))
+                << GetAddrStr(reinterpret_cast<sockaddr*>(&bound_addr));
+          }
+        } else {
+          EXPECT_THAT(bind_ret, SyscallFailsWithErrno(EINVAL));
+        }
+        break;
+      }
+      case Connect: {
+        ASSERT_NO_ERRNO(SetAddrPort(
+            addr.family(), const_cast<sockaddr_storage*>(&addr.addr), 1337));
+
+        EXPECT_THAT(connect(fd.get(), addr_in, addr.addr_len),
+                    SyscallSucceeds())
+            << GetAddrStr(addr_in);
+        bound = true;
+
+        for (auto fn : {getpeername, getsockname}) {
+          sockaddr_storage bound_addr;
+          socklen_t addrlen = sizeof(bound_addr);
+          ASSERT_THAT(
+              fn(fd.get(), reinterpret_cast<sockaddr*>(&bound_addr), &addrlen),
+              SyscallSucceeds());
+          ASSERT_EQ(addrlen, sizeof(struct sockaddr_in6));
+
+          if (addr.family() == AF_INET ||
+              IN6_IS_ADDR_V4MAPPED(
+                  reinterpret_cast<const sockaddr_in6*>(addr_in)
+                      ->sin6_addr.s6_addr32)) {
+            ASSERT_TRUE(IN6_IS_ADDR_V4MAPPED(
+                reinterpret_cast<const sockaddr_in6*>(&bound_addr)
+                    ->sin6_addr.s6_addr32))
+                << GetAddrStr(reinterpret_cast<sockaddr*>(&bound_addr));
+          }
+        }
+
+        break;
+      }
+      case SendTo: {
+        const char payload[] = "hello";
+        ASSERT_NO_ERRNO(SetAddrPort(
+            addr.family(), const_cast<sockaddr_storage*>(&addr.addr), 1337));
+
+        ssize_t sendto_ret = sendto(fd.get(), &payload, sizeof(payload), 0,
+                                    addr_in, addr.addr_len);
+
+        EXPECT_THAT(sendto_ret, SyscallSucceedsWithValue(sizeof(payload)));
+        if (!bound) {
+          sockaddr_storage bound_addr;
+          socklen_t addrlen = sizeof(bound_addr);
+          ASSERT_THAT(
+              getsockname(fd.get(), reinterpret_cast<sockaddr*>(&bound_addr),
+                          &addrlen),
+              SyscallSucceeds());
+          ASSERT_EQ(addrlen, sizeof(struct sockaddr_in6));
+
+          auto bound_addr_in6 =
+              reinterpret_cast<const sockaddr_in6*>(&bound_addr);
+
+          ASSERT_EQ(bound_addr_in6->sin6_family, AF_INET6);
+
+          ASSERT_TRUE(
+              IN6_IS_ADDR_UNSPECIFIED(bound_addr_in6->sin6_addr.s6_addr32))
+              << GetAddrStr(reinterpret_cast<sockaddr*>(&bound_addr));
+
+          ASSERT_NE(bound_addr_in6->sin6_port, 0);
+        }
+        bound = true;
+        break;
+      }
+    }
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    All, DualStackSocketTest,
+    ::testing::Combine(
+        ::testing::Values(V4Loopback(), V4MappedLoopback(), V6Loopback()),
+        ::testing::ValuesIn<OperationSequence>({{Bind, Connect, SendTo},
+                                                {Bind, SendTo, Connect},
+                                                {Connect, Bind, SendTo},
+                                                {Connect, SendTo, Bind},
+                                                {SendTo, Bind, Connect},
+                                                {SendTo, Connect, Bind}})),
+    [](::testing::TestParamInfo<
+        std::tuple<TestAddress, OperationSequence>> const& info) {
+      auto const& addr = std::get<0>(info.param);
+      auto const& operations = std::get<1>(info.param);
+      std::string s = addr.description;
+      for (auto const& operation : operations) {
+        switch (operation) {
+          case Bind:
+            absl::StrAppend(&s, "Bind");
+            break;
+          case Connect:
+            absl::StrAppend(&s, "Connect");
+            break;
+          case SendTo:
+            absl::StrAppend(&s, "SendTo");
+            break;
+        }
+      }
+      return s;
+    });
 
 void tcpSimpleConnectTest(TestAddress const& listener,
                           TestAddress const& connector, bool unbound) {

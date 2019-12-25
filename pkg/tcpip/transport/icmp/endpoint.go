@@ -289,7 +289,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 		toCopy := *to
 		to = &toCopy
-		netProto, err := e.checkV4Mapped(to, true)
+		netProto, err := e.checkV4Mapped(to)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -350,9 +350,19 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	return nil
 }
 
+// SetSockOptBool sets a socket option. Currently not supported.
+func (e *endpoint) SetSockOptBool(opt tcpip.SockOptBool, v bool) *tcpip.Error {
+	return nil
+}
+
 // SetSockOptInt sets a socket option. Currently not supported.
 func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) *tcpip.Error {
 	return nil
+}
+
+// GetSockOptBool implements tcpip.Endpoint.GetSockOptBool.
+func (e *endpoint) GetSockOptBool(opt tcpip.SockOptBool) (bool, *tcpip.Error) {
+	return false, tcpip.ErrUnknownProtocolOption
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
@@ -466,18 +476,12 @@ func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) *tcpip.Err
 	})
 }
 
-func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
-	netProto := e.NetProto
-	if header.IsV4MappedAddress(addr.Addr) {
-		return 0, tcpip.ErrNoRoute
+func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
+	unwrapped, netProto, err := e.TransportEndpointInfo.AddrNetProto(*addr, false)
+	if err != nil {
+		return 0, err
 	}
-
-	// Fail if we're bound to an address length different from the one we're
-	// checking.
-	if l := len(e.ID.LocalAddress); !allowMismatch && l != 0 && l != len(addr.Addr) {
-		return 0, tcpip.ErrInvalidEndpointState
-	}
-
+	*addr = unwrapped
 	return netProto, nil
 }
 
@@ -509,7 +513,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	netProto, err := e.checkV4Mapped(&addr, false)
+	netProto, err := e.checkV4Mapped(&addr)
 	if err != nil {
 		return err
 	}
@@ -622,7 +626,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	netProto, err := e.checkV4Mapped(&addr, false)
+	netProto, err := e.checkV4Mapped(&addr)
 	if err != nil {
 		return err
 	}
