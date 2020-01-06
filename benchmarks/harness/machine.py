@@ -167,8 +167,10 @@ class LocalMachine(Machine):
   def pull(self, workload: str) -> str:
     # Run the docker build command locally.
     logging.info("Building %s@%s locally...", workload, self._name)
-    self.run("docker build --tag={} {}".format(
-        workload, harness.LOCAL_WORKLOADS_PATH.format(workload)))
+    with open(harness.LOCAL_WORKLOADS_PATH.format(workload),
+              "rb") as dockerfile:
+      self._docker_client.images.build(
+          fileobj=dockerfile, tag=workload, custom_context=True)
     return workload  # Workload is the tag.
 
   def container(self, image: str, **kwargs) -> container.Container:
@@ -212,6 +214,9 @@ class RemoteMachine(Machine):
     # Push to the remote machine and build.
     logging.info("Building %s@%s remotely...", workload, self._name)
     remote_path = self._ssh_connection.send_workload(workload)
+    # Workloads are all tarballs.
+    self.run("tar -xvf {remote_path}/tar.tar -C {remote_path}".format(
+        remote_path=remote_path))
     self.run("docker build --tag={} {}".format(workload, remote_path))
     return workload  # Workload is the tag.
 
