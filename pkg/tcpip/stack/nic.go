@@ -896,6 +896,14 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 
 	src, dst := netProto.ParseAddresses(pkt.Data.First())
 
+	if n.stack.handleLocal && linkEP.Capabilities()&CapabilityLoopback == 0 && n.getRef(protocol, src) != nil {
+		// The source address is one of our own, so we never should have gotten a
+		// packet like this unless handleLocal is false.  Loopback also calls this
+		// function even though the packets didn't come from the physical interface
+		// so don't filter those.
+		n.stack.stats.IP.InvalidAddressesReceived.Increment()
+		return
+	}
 	if ref := n.getRef(protocol, dst); ref != nil {
 		handlePacket(protocol, dst, src, linkEP.LinkAddress(), remote, ref, pkt)
 		return

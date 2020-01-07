@@ -273,11 +273,16 @@ type testContext struct {
 
 func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 	t.Helper()
-
-	s := stack.New(stack.Options{
+	return newDualTestContextWithOptions(t, mtu, stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
 	})
+}
+
+func newDualTestContextWithOptions(t *testing.T, mtu uint32, options stack.Options) *testContext {
+	t.Helper()
+
+	s := stack.New(options)
 	ep := channel.New(256, mtu, "")
 	wep := stack.LinkEndpoint(ep)
 
@@ -757,6 +762,80 @@ func TestV6ReadOnV6(t *testing.T) {
 
 	// Test acceptance.
 	testRead(c, unicastV6)
+}
+
+// TestV4ReadSelfSource checks that packets coming from a local IP address are
+// correctly dropped when handleLocal is true.
+func TestV4ReadSelfSourceHandleLocal(t *testing.T) {
+	c := newDualTestContextWithOptions(t, defaultMTU, stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+		HandleLocal:        false,
+	})
+	defer c.cleanup()
+
+	c.createEndpointForFlow(unicastV4)
+
+	// Bind to wildcard.
+	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+		c.t.Fatalf("Bind failed: %v", err)
+	}
+
+	// Test acceptance.
+	payload := newPayload()
+	h := unicastV4.header4Tuple(incoming)
+	h.srcAddr = h.dstAddr
+
+	// Try to receive the data.
+	we, ch := waiter.NewChannelEntry(nil)
+	c.wq.EventRegister(&we, waiter.EventIn)
+	defer c.wq.EventUnregister(&we)
+
+	c.injectV4Packet(payload, &h, true /* valid */)
+	// Wait for data to become available.
+	select {
+	case <-ch:
+
+	case <-time.After(300 * time.Millisecond):
+		c.t.Fatal("didn't receive packet in 300ms")
+	}
+}
+
+// TestV4ReadSelfSource checks that packets coming from a local IP address are
+// correctly dropped when handleLocal is true.
+func TestV4ReadSelfSourceDoNotHandleLocal(t *testing.T) {
+	c := newDualTestContextWithOptions(t, defaultMTU, stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+		HandleLocal:        true,
+	})
+	defer c.cleanup()
+
+	c.createEndpointForFlow(unicastV4)
+
+	// Bind to wildcard.
+	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+		c.t.Fatalf("Bind failed: %v", err)
+	}
+
+	// Test acceptance.
+	payload := newPayload()
+	h := unicastV4.header4Tuple(incoming)
+	h.srcAddr = h.dstAddr
+
+	// Try to receive the data.
+	we, ch := waiter.NewChannelEntry(nil)
+	c.wq.EventRegister(&we, waiter.EventIn)
+	defer c.wq.EventUnregister(&we)
+
+	c.injectV4Packet(payload, &h, true /* valid */)
+	// Wait for data to become available.
+	select {
+	case <-ch:
+		c.t.Fatal("got a packet but expected it to be filtered")
+
+	case <-time.After(300 * time.Millisecond):
+	}
 }
 
 func TestV4ReadOnV4(t *testing.T) {
