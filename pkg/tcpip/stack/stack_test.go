@@ -2001,6 +2001,28 @@ func TestNICAutoGenAddr(t *testing.T) {
 	}
 }
 
+// TestNICContextPreservation tests that you can read out via stack.NICInfo the
+// Context pointer you pass via NICContext.Context in
+// stack.CreateNICWithOptions.
+func TestNICContextPreservation(t *testing.T) {
+	s := stack.New(stack.Options{})
+	var ctx *int
+	id := tcpip.NICID(1)
+	ep := channel.New(0, 0, tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00"))
+	opts := stack.NICOptions{Context: ctx}
+	if err := s.CreateNICWithOptions(id, ep, opts); err != nil {
+		t.Fatalf("got stack.CreateNICWithOptions(%d, %+v, %+v) = %s, want nil", id, ep, opts, err)
+	}
+	nicinfos := s.NICInfo()
+	nicinfo, ok := nicinfos[id]
+	if !ok {
+		t.Fatalf("got nicinfos[%d] = _, %t, want _, true; nicinfos = %+v", id, ok, nicinfos)
+	}
+	if got, want := nicinfo.Context == ctx, true; got != want {
+		t.Fatal("got nicinfo.Context == ctx = %t, want %t; nicinfo.Context = %p, ctx = %p", got, want, nicinfo.Context, ctx)
+	}
+}
+
 // TestNICAutoGenAddrWithOpaque tests the auto-generation of IPv6 link-local
 // addresses with opaque interface identifiers. Link Local addresses should
 // always be generated with opaque IIDs if configured to use them, even if the
@@ -2097,8 +2119,9 @@ func TestNICAutoGenAddrWithOpaque(t *testing.T) {
 
 			e := channel.New(10, 1280, test.linkAddr)
 			s := stack.New(opts)
-			if err := s.CreateNamedNIC(nicID, test.nicName, e); err != nil {
-				t.Fatalf("CreateNamedNIC(%d, %q, _) = %s", nicID, test.nicName, err)
+			nicOpts := stack.NICOptions{Name: test.nicName, Enabled: true}
+			if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
+				t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, opts, err)
 			}
 
 			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)
@@ -2156,8 +2179,9 @@ func TestNoLinkLocalAutoGenForLoopbackNIC(t *testing.T) {
 
 			e := loopback.New()
 			s := stack.New(opts)
-			if err := s.CreateNamedNIC(nicID, nicName, e); err != nil {
-				t.Fatalf("CreateNamedNIC(%d, %q, _) = %s", nicID, nicName, err)
+			nicOpts := stack.NICOptions{Name: nicName, Enabled: true}
+			if err := s.CreateNICWithOptions(nicID, e, nicOpts); err != nil {
+				t.Fatalf("CreateNICWithOptions(%d, _, %+v) = %s", nicID, nicOpts, err)
 			}
 
 			addr, err := s.GetMainNICAddress(nicID, header.IPv6ProtocolNumber)

@@ -3794,13 +3794,15 @@ func TestBindToDeviceOption(t *testing.T) {
 	}
 	defer ep.Close()
 
-	if err := s.CreateNamedNIC(321, "my_device", loopback.New()); err != nil {
-		t.Errorf("CreateNamedNIC failed: %v", err)
+	loopbackOpts := stack.NICOptions{Name: "my_device", Enabled: true}
+	if err := s.CreateNICWithOptions(321, loopback.New(), loopbackOpts); err != nil {
+		t.Errorf("CreateNICWithOptions(_, _, %+v) failed: %v", loopbackOpts, err)
 	}
 
 	// Make an nameless NIC.
-	if err := s.CreateNIC(54321, loopback.New()); err != nil {
-		t.Errorf("CreateNIC failed: %v", err)
+	nicOpts := stack.NICOptions{Enabled: true}
+	if err := s.CreateNICWithOptions(54321, loopback.New(), nicOpts); err != nil {
+		t.Errorf("CreateNICWithOptions(_, _, %+v) failed: %v", nicOpts, err)
 	}
 
 	// strPtr is used instead of taking the address of string literals, which is
